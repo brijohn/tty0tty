@@ -119,6 +119,7 @@ static int tty0tty_open(struct tty_struct *tty, struct file *file)
 
 		sema_init(&tty0tty->sem, 1);
 		tty0tty->open_count = 0;
+		init_waitqueue_head(&tty0tty->wait);
 
 		tty0tty_table[index] = tty0tty;
 
@@ -407,6 +408,7 @@ static int tty0tty_tiocmset(struct tty_struct *tty,
 	struct tty0tty_serial *tty0tty = tty->driver_data;
 	unsigned int mcr = tty0tty->mcr;
 	unsigned int msr = 0;
+	unsigned int prev_msr = 0;
 
 #ifdef SCULL_DEBUG
 	printk(KERN_DEBUG "%s - \n", __FUNCTION__);
@@ -414,16 +416,14 @@ static int tty0tty_tiocmset(struct tty_struct *tty,
 
 	if ((tty0tty->tty->index % 2) == 0) {
 		if (tty0tty_table[tty0tty->tty->index + 1] != NULL)
-			if (tty0tty_table[tty0tty->tty->index + 1]->open_count >
-			    0)
-				msr =
-				    tty0tty_table[tty0tty->tty->index + 1]->msr;
+			if (tty0tty_table[tty0tty->tty->index + 1]->open_count > 0) {
+				prev_msr = msr = tty0tty_table[tty0tty->tty->index + 1]->msr;
+			}
 	} else {
 		if (tty0tty_table[tty0tty->tty->index - 1] != NULL)
-			if (tty0tty_table[tty0tty->tty->index - 1]->open_count >
-			    0)
-				msr =
-				    tty0tty_table[tty0tty->tty->index - 1]->msr;
+			if (tty0tty_table[tty0tty->tty->index - 1]->open_count > 0) {
+				prev_msr = msr = tty0tty_table[tty0tty->tty->index - 1]->msr;
+			}
 	}
 
 //null modem connection
@@ -455,16 +455,20 @@ static int tty0tty_tiocmset(struct tty_struct *tty,
 
 	if ((tty0tty->tty->index % 2) == 0) {
 		if (tty0tty_table[tty0tty->tty->index + 1] != NULL)
-			if (tty0tty_table[tty0tty->tty->index + 1]->open_count >
-			    0)
-				tty0tty_table[tty0tty->tty->index + 1]->msr =
-				    msr;
+			if (tty0tty_table[tty0tty->tty->index + 1]->open_count > 0) {
+				tty0tty_table[tty0tty->tty->index + 1]->msr = msr;
+				if (prev_msr != msr) {
+					wake_up_interruptible(&(tty0tty_table[tty0tty->tty->index + 1]->wait));
+				}
+			}
 	} else {
 		if (tty0tty_table[tty0tty->tty->index - 1] != NULL)
-			if (tty0tty_table[tty0tty->tty->index - 1]->open_count >
-			    0)
-				tty0tty_table[tty0tty->tty->index - 1]->msr =
-				    msr;
+			if (tty0tty_table[tty0tty->tty->index - 1]->open_count > 0) {
+				tty0tty_table[tty0tty->tty->index - 1]->msr = msr;
+				if (prev_msr != msr) {
+					wake_up_interruptible(&(tty0tty_table[tty0tty->tty->index - 1]->wait));
+				}
+			}
 	}
 	return 0;
 }
